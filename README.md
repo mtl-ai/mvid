@@ -1,8 +1,18 @@
-mvid is a lightweight library that treats video as a simple sequence of NumPy arrays, making it easy to iterate over,
-and process frames with familiar array‑based workflows.
+# mvid
+mvid is a simple library to treat video as a sequence (e.g. as a list) of NumPY arrays.
 
-Provides a simple sequence container class returning numpy arrays for video
+```python
+from mvid import Video
 
-# Use Cases
-- Loading data directly from videos for ML pipelines
-- 
+with Video("myvideo.mp4") as video:
+    # get the number of frames
+    print(len(video))
+
+    # random access
+    frame = video[57]
+    
+    # iterate over all frames in the video
+    for frame in video:
+        pass
+```
+It is built on top of PyAV (with minimal to no overhead) and abstracts away seeking and timing issues. 
