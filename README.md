@@ -1,5 +1,5 @@
 # mvid
-mvid is a simple library to treat video as a sequence (e.g. as a list) of NumPY arrays.
+mvid is a simple library to access videos by frame index and return NumPy arrays.
 
 ```python
 from mvid import Video
@@ -15,10 +15,14 @@ with Video("myvideo.mp4") as video:
     for frame in video:
         pass
 ```
-It is built on top of PyAV (with minimal to no overhead) and abstracts away seeking and timing logic.
+It uses PyAV (with minimal to no overhead) and abstracts away seeking logic for you.
 
-# Requirements
-Requires [PyAV](https://pyav.basswood-io.com/docs/stable/) and NumPY.
+# Installation
+```bash
+pip install mvid
+```
+
+It requires [PyAV](https://pyav.basswood-io.com/docs/stable/) and NumPY.
 
 # How it works
 Frame lookup is based on decoding from the nearest preceding keyframe up to the requested index. 
@@ -38,5 +42,5 @@ There is overhead from conversion to NumPY arrays. We also provide a more "raw" 
 performs all the bookkeeping without NumPY conversion.
 
 # Related projects
-[torchcodec](https://github.com/meta-pytorch/torchcodec) is a more heavy-duty library that returns PyTorch tensors.
+[TorchCodec](https://github.com/meta-pytorch/torchcodec) is a more heavy-duty library that returns PyTorch tensors.
 It also has index-based access (among other options). It requires managing your installation of ffmpeg.
