@@ -6,8 +6,9 @@ from tqdm import tqdm
 from mvid import Video
 
 if __name__ == "__main__":
-    # in and older implementation there was an issue with a circular reference that
-    # prevented resources from being garbage collected in a timely fashion
+    # In an older implementation there was an issue with resources not being freed properly.
+    # The cause was circular references with the frame generator.
+    # This was especially obvious with "AUTO" threading.
     video_path = sys.argv[1]
     window_size = 5
 
