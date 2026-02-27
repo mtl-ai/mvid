@@ -1,5 +1,4 @@
-from collections.abc import Sequence
-from typing import Iterator, Literal
+from typing import Generator, Sequence
 
 import av
 import numpy as np
@@ -13,7 +12,9 @@ class AVVideo(Sequence[av.VideoFrame]):
 
     This class takes care of all the necessary seeking and bookkeeping.
 
-    The main idea is to seek only when necessary and to decode all the frames until we reach the target frame index.
+    The main idea is to seek to the nearest keyframe and decode all the frames until we reach the target frame index.
+    In the case that we will simply access the next frame, we hold on to the container.decode() context in a generator
+    so that we don't need to seek and repeat decoding packets.
     """
 
     def __init__(
@@ -44,12 +45,12 @@ class AVVideo(Sequence[av.VideoFrame]):
         stream.thread_type = thread_type
         stream.thread_count = thread_count
 
-        AVVideo._verify_timing(stream)
-
         self._container = container
         self._stream = stream
         self._next_frame_idx = 0
-        self._iterator = self._create_iterator()
+        self._generator = self._create_generator()
+
+        AVVideo._verify_timing(stream)
 
     @staticmethod
     def _verify_timing(stream):
@@ -65,24 +66,25 @@ class AVVideo(Sequence[av.VideoFrame]):
             raise ValueError("Unknown number of frames in the video file")
 
         # The stream time_base gives the number of seconds per 'tick'.
-        # Each frame has presentation time stamp (PTS) which counts in 'ticks'.
-        # The stream base_rate should give the frames per second (FPS) of the video.
-        # (NOTE: perhaps guessed_rate would be a good choice to use instead).
-        # If we calculate how many pts (ticks) are in a frame, this should be an integer.
+        # Each frame has presentation time stamp (PTS) which counts in ticks.
+        # The stream base_rate should give the frames per second (FPS) of the video
+        # (perhaps guessed_rate would be a good choice to use instead).
+        # If we calculate how many ticks are in a frame, this should be an integer.
         # 1 / ticks_per_frame = frames_per_second * seconds_per_tick
-        pts_per_frame = 1 / (stream.base_rate * stream.time_base)
-        if pts_per_frame.denominator != 1:
+        ticks_per_frame = 1 / (stream.base_rate * stream.time_base)
+        if ticks_per_frame.denominator != 1:
             raise ValueError(
-                f"PTS per frame ({float(pts_per_frame)}) is not an integer for this video stream, check your file"
+                f"Ticks per frame ({float(ticks_per_frame)}) is not an integer for this video stream; check your file's timing metadata"
             )
 
         # duration in seconds == number of frames / fps
         if stream.duration * stream.time_base != stream.frames / stream.base_rate:
             raise ValueError(
-                f"Duration of the video file in seconds is inconsistent with the number of frames"
+                f"Duration of the video file in seconds is inconsistent with the number of frames; check your file's timing metadata"
             )
 
     def close(self):
+        self._generator.close()
         self._container.close()
 
     def __enter__(self):
@@ -95,54 +97,54 @@ class AVVideo(Sequence[av.VideoFrame]):
         return self._stream.frames
 
     @staticmethod
-    def _create_iterator_static(
-        container: av.container.InputContainer,
-        stream: av.video.VideoStream,
-        next_frame_idx: int,
-    ) -> Iterator[av.video.frame.VideoFrame]:
-        # this method is static to avoid circular references with 'self' inside self._iterator
-        # (which can cause slow leak of resources if the gc doesn't handle it fast enough)
+    def _create_generator_static(container, stream) -> Generator[av.VideoFrame, None, None]:
+        # This method is static to avoid circular references which can hog resources.
         for frame in container.decode(stream.index):
-            frame: av.video.frame.VideoFrame
-
-            # frame index = (ticks * seconds_per_tick) * fps
-            frame_idx = (frame.pts * frame.time_base) * stream.base_rate
-
-            if frame_idx != round(frame_idx):
-                raise ValueError(
-                    f"Video frame index is not an integer ({float(frame_idx)}), check your video file"
-                )
-            frame_idx = round(frame_idx)
-
-            if frame_idx > next_frame_idx:
-                raise ValueError(f"Video file is missing frame {next_frame_idx}")
-
-            # might need to skip some frames after a seek
-            if frame_idx < next_frame_idx:
-                continue
-
             yield frame
-            next_frame_idx = frame_idx + 1
 
-    def _create_iterator(self):
-        return AVVideo._create_iterator_static(
-            container=self._container,
-            stream=self._stream,
-            next_frame_idx=self._next_frame_idx,
-        )
+    def _create_generator(self) -> Generator[av.VideoFrame, None, None] :
+        return self._create_generator_static(self._container, self._stream)
 
     def _seek(self, frame_idx):
-        pts_offset = round(frame_idx / self._stream.base_rate / self._stream.time_base)
+        # By closing the generator, we exit the PyAV container.decode() context before seeking.
+        # This doesn't appear to be required, but seems like the safest thing to do.
+        self._generator.close()
+
+        pts_offset = frame_idx / self._stream.base_rate / self._stream.time_base
+        assert pts_offset == int(pts_offset)  # verified at initialization
+        pts_offset = int(pts_offset)
         self._container.seek(
             offset=pts_offset, backward=True, any_frame=False, stream=self._stream
         )
         self._next_frame_idx = frame_idx
-        self._iterator = self._create_iterator()
+
+        # We start a fresh container.decode() context after seeking. Otherwise, we have to deal with empty packets
+        # and old frames (especially with "AUTO" or "FRAME" threading). This also seems like the safest way to
+        # use the PyAV API.
+        self._generator = self._create_generator()
 
     def _read(self):
-        frame = next(self._iterator)
-        self._next_frame_idx += 1
-        return frame
+        for frame in self._generator:
+            # frame index = (ticks * seconds_per_tick) * fps
+            frame_idx = (frame.pts * frame.time_base) * self._stream.base_rate
+
+            if frame_idx != round(frame_idx):
+                raise ValueError(
+                    f"Video frame index is not an integer ({float(frame_idx)}); check your video file"
+                )
+            frame_idx = round(frame_idx)
+
+            if frame_idx > self._next_frame_idx:
+                raise ValueError(f"Video file is missing frame {self._next_frame_idx}")
+
+            # might need to skip some frames after a seek
+            if frame_idx < self._next_frame_idx:
+                continue
+
+            assert frame_idx == self._next_frame_idx  # we've checked > and <, so all that remains is ==
+
+            self._next_frame_idx += 1
+            return frame
 
     def __getitem__(self, frame_idx: int):
         if not 0 <= frame_idx < len(self):
@@ -181,6 +183,8 @@ class Video(Sequence[np.ndarray]):
     require seeking and decoding intermediate frames that are ultimately discarded.
 
     Thread type "AUTO" is generally faster for sequential access, but for random access it may be worse.
+
+    Video files that are I-frame encoded are generally faster at random access.
     """
 
     def __init__(
