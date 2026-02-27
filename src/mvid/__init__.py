@@ -82,7 +82,7 @@ class AVVideo(Sequence[av.VideoFrame]):
         # duration in seconds == number of frames / fps
         if stream.duration * stream.time_base != stream.frames / stream.base_rate:
             raise ValueError(
-                f"Duration of the video file in seconds is inconsistent with the number of frames; check your file's timing metadata"
+                "Duration of the video file in seconds is inconsistent with the number of frames; check your file's timing metadata"
             )
 
     def close(self):
