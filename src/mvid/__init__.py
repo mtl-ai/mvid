@@ -37,8 +37,10 @@ class AVVideo(Sequence[av.VideoFrame]):
         The best thread type to use depends on the way the video is encoded and your access pattern.
         """
 
-        if thread_type not in ('SLICE', 'FRAME', 'AUTO'):
-            raise ValueError(f"thread_type '{thread_type}' is not 'SLICE', 'FRAME', or 'AUTO'")
+        if thread_type not in ("SLICE", "FRAME", "AUTO"):
+            raise ValueError(
+                f"thread_type '{thread_type}' is not 'SLICE', 'FRAME', or 'AUTO'"
+            )
 
         container: av.container.InputContainer = av.open(path)
         stream: av.video.stream.VideoStream = container.streams.video[video_stream_id]
@@ -97,12 +99,14 @@ class AVVideo(Sequence[av.VideoFrame]):
         return self._stream.frames
 
     @staticmethod
-    def _create_generator_static(container, stream) -> Generator[av.VideoFrame, None, None]:
+    def _create_generator_static(
+        container, stream
+    ) -> Generator[av.VideoFrame, None, None]:
         # This method is static to avoid circular references which can hog resources.
         for frame in container.decode(stream.index):
             yield frame
 
-    def _create_generator(self) -> Generator[av.VideoFrame, None, None] :
+    def _create_generator(self) -> Generator[av.VideoFrame, None, None]:
         return self._create_generator_static(self._container, self._stream)
 
     def _seek(self, frame_idx):
@@ -141,7 +145,8 @@ class AVVideo(Sequence[av.VideoFrame]):
             if frame_idx < self._next_frame_idx:
                 continue
 
-            assert frame_idx == self._next_frame_idx  # we've checked > and <, so all that remains is ==
+            # we've checked > and <, so all that remains is ==
+            assert frame_idx == self._next_frame_idx
 
             self._next_frame_idx += 1
             return frame

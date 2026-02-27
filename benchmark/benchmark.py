@@ -16,7 +16,11 @@ if __name__ == "__main__":
     thread_count_list = [0, 1, 5]
 
     # number of sequence frames to access before random skip
-    access_pattern_list = [0, 1, 5,]
+    access_pattern_list = [
+        0,
+        1,
+        5,
+    ]
 
     n_frames = 500
 
