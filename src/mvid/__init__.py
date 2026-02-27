@@ -62,7 +62,7 @@ class AVVideo(Sequence[av.VideoFrame]):
             raise ValueError("Video stream starts at an offset")
 
         if stream.frames == 0:
-            raise ValueError("Unknown number of frames in video")
+            raise ValueError("Unknown number of frames in the video file")
 
         # The stream time_base gives the number of seconds per 'tick'.
         # Each frame has presentation time stamp (PTS) which counts in 'ticks'.
@@ -73,13 +73,13 @@ class AVVideo(Sequence[av.VideoFrame]):
         pts_per_frame = 1 / (stream.base_rate * stream.time_base)
         if pts_per_frame.denominator != 1:
             raise ValueError(
-                f"PTS per frame ({float(pts_per_frame)}) is not an integer "
+                f"PTS per frame ({float(pts_per_frame)}) is not an integer for this video stream, check your file"
             )
 
         # duration in seconds == number of frames / fps
         if stream.duration * stream.time_base != stream.frames / stream.base_rate:
             raise ValueError(
-                f"Duration of video in seconds is inconsistent with the number of frames"
+                f"Duration of the video file in seconds is inconsistent with the number of frames"
             )
 
     def close(self):
@@ -110,12 +110,12 @@ class AVVideo(Sequence[av.VideoFrame]):
 
             if frame_idx != round(frame_idx):
                 raise ValueError(
-                    f"Video frame index is not an integer ({float(frame_idx)})"
+                    f"Video frame index is not an integer ({float(frame_idx)}), check your video file"
                 )
             frame_idx = round(frame_idx)
 
             if frame_idx > next_frame_idx:
-                raise ValueError(f"Video is missing frame {next_frame_idx}")
+                raise ValueError(f"Video file is missing frame {next_frame_idx}")
 
             # might need to skip some frames after a seek
             if frame_idx < next_frame_idx:
