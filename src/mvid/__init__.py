@@ -4,41 +4,23 @@ from typing import Iterator, Literal
 import av
 import numpy as np
 
-AVThreadType = Literal["SLICE", "FRAME", "AUTO"]
-
 
 class AVVideo(Sequence[av.VideoFrame]):
     """
-    Provides random and sequential access to video frames using PyAV.
+    This is the "raw" PyAV version of the Video class. It returns PyAV Frame objects.
 
-    This class exposes a simple Pythonic sequence interface for reading frames by index,
-    iterating through frames, and querying the total number of frames.
-    It assumes a video with a stable frame rate. Videos with variable
-    frame rates or inconsistent timing metadata may raise errors. This is
-    intentional so such cases can be inspected and future support evaluated.
+    See Video docs for more information about usage.
 
-    Sequential access is generally faster than random access because random access may
-    require seeking and decoding intermediate frames that are ultimately discarded.
+    This class takes care of all the necessary seeking and bookkeeping.
 
-    Example usage:
-
-    ```python
-    with AVVideo(path) as video:
-        print(len(video))                 # total number of frames
-        frame_a = video[0]                # first frame
-        frame_b = video[12]               # frame 12
-        frame_c = video[len(video) - 1]   # last frame
-
-        for frame in video:               # sequential iteration
-            pass
-    ```
+    The main idea is to seek only when necessary and to decode all the frames until we reach the target frame index.
     """
 
     def __init__(
         self,
         path,
         video_stream_id=0,
-        thread_type: AVThreadType = "SLICE",
+        thread_type="SLICE",
         thread_count=0,
     ):
         """
@@ -53,6 +35,9 @@ class AVVideo(Sequence[av.VideoFrame]):
 
         The best thread type to use depends on the way the video is encoded and your access pattern.
         """
+
+        if thread_type not in ('SLICE', 'FRAME', 'AUTO'):
+            raise ValueError(f"thread_type '{thread_type}' is not 'SLICE', 'FRAME', or 'AUTO'")
 
         container: av.container.InputContainer = av.open(path)
         stream: av.video.stream.VideoStream = container.streams.video[video_stream_id]
@@ -172,29 +157,36 @@ class AVVideo(Sequence[av.VideoFrame]):
 
 class Video(Sequence[np.ndarray]):
     """
-    Provides random and sequential access to videos. Frames are returned as NumPy arrays.
-
-    This class exposes a simple Pythonic sequence interface for reading frames by index,
-    iterating through frames, and querying the total number of frames.
+    Provides sequential and random access to video frames. The frames are returned as NumPy arrays.
 
     Example usage:
 
     ```python
-    with Video(path) as video:
-        print(len(video))                 # total number of frames
-        frame_a = video[0]                # first frame
-        frame_b = video[12]               # frame 12
-        frame_c = video[len(video) - 1]   # last frame
+    with AVVideo(path) as video:
+        print(len(video))               # total number of frames
+        print(frame.shape)              # e.g. (1080, 1920, 3)
+        print(frame.dtype)              # e.g. np.uint8
+        frame = video[0]                # first frame
+        frame = video[12]               # frame 12
+        frame = video[len(video) - 1]   # last frame
 
-        for frame in video:               # sequential iteration
+        for frame in video:             # sequential iteration
             pass
     ```
+
+    Videos with variable frame rates or inconsistent timing metadata may raise errors. This is
+    intentional so such cases can be inspected and future support evaluated.
+
+    Sequential access is generally faster than random access because random access may
+    require seeking and decoding intermediate frames that are ultimately discarded.
+
+    Thread type "AUTO" is generally faster for sequential access, but for random access it may be worse.
     """
 
     def __init__(
         self,
         path,
-        pix_fmt="rgb24",
+        format="rgb24",
         width=None,
         height=None,
         thread_type="SLICE",
@@ -204,18 +196,18 @@ class Video(Sequence[np.ndarray]):
         Initialize Video
 
         :param path: path to video file
-        :param pix_fmt: pixel format when converting to numpy array (default rgb24, which is 8 bits per channel)
+        :param format: format when converting to numpy array (default rgb24, which is 8 bits per channel)
         see https://pyav.basswood-io.com/docs/stable/api/video.html#av.video.format.VideoFormat
         :param width: output width (None for same as video)
         :param height: output height (None for same as video)
-        :param thread_type: thread type argument to pyav stream (see AVVideo docs)
-        :param thread_count: thread count argument to pyav stream (see AVVideo docs)
+        :param thread_type: thread type argument to pyav stream, must be 'SLICE' or 'FRAME', or 'AUTO'
+        :param thread_count: thread count argument to pyav stream
         """
 
         self._av_video = AVVideo(
             path, thread_type=thread_type, thread_count=thread_count
         )
-        self._pix_fmt = pix_fmt
+        self._format = format
         self._width = width
         self._height = height
 
@@ -231,8 +223,8 @@ class Video(Sequence[np.ndarray]):
     def __len__(self):
         return len(self._av_video)
 
-    def __getitem__(self, item):
+    def __getitem__(self, item) -> np.ndarray:
         frame = self._av_video[item]
         return frame.to_ndarray(
-            format=self._pix_fmt, width=self._width, height=self._height
+            format=self._format, width=self._width, height=self._height
         )
