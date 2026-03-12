@@ -1,5 +1,12 @@
 # mvid
-mvid is a simple library to access videos by frame index and return NumPy arrays.
+`mvid` is a simple library to access video frames by index. This is useful when
+you want to refer to a specific frame in a video, but you prefer not dealing with timestamps, keyframes,
+and other video encoding details. 
+
+It is implemented as a very light interface ontop of [PyAV](https://pyav.basswood-io.com/docs/stable/).
+
+# Usage
+To read from a video, use the `Video` class. Frames are returned as NumPy arrays.
 
 ```python
 import mvid
@@ -17,9 +24,8 @@ with mvid.Video("myvideo.mp4") as video:
     for frame in video:
         pass
 ```
-It uses PyAV (with minimal to no overhead) and abstracts away seeking logic for you.
 
-We also give a simple `Recorder` to write from NumPy arrays
+We also give a simple `Recorder` class to output to a video file.
 ```python
 import numpy as np
 import mvid
@@ -44,7 +50,7 @@ Frame lookup is based on decoding from the nearest preceding keyframe up to the 
 We determine that index using each frame’s timestamp together with the stream’s frame rate. 
 This approach works well for videos with consistent timing metadata, but not all files follow those assumptions. 
 Some containers use variable frame rates or contain incomplete or inconsistent timestamps. In those cases 
-there is no reliable way to infer a stable frame index without first scanning every frame and assigning 
+there is no reliable way to infer a frame index without first scanning every frame and assigning 
 indices explicitly. Rather than performing that preprocessing step, we intentionally crash when encountering 
 timing metadata that cannot be interpreted unambiguously.
 
@@ -53,8 +59,8 @@ Generally speaking, sequential access is as fast as possible thanks to PyAV. Che
 with `ffmpeg -i <my_video> -f null -`. The benchmarking script will also try random access and various 
 thread parameters so you can see what performance to expect. 
 
-There is overhead from conversion to NumPY arrays. We also provide a more "raw" AVVideo class that 
-performs all the bookkeeping without NumPY conversion.
+There is overhead from conversion to NumPy arrays (which is calling `av.VideoFrame.to_ndarray()`). 
+We also provide a "raw" AVVideo class that performs all the bookkeeping for frame access without NumPy conversion.
 
 # Related projects
 [TorchCodec](https://github.com/meta-pytorch/torchcodec) is a more heavy-duty library that returns PyTorch tensors.
