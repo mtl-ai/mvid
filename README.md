@@ -2,20 +2,35 @@
 mvid is a simple library to access videos by frame index and return NumPy arrays.
 
 ```python
-from mvid import Video
+import mvid
 
-with Video("myvideo.mp4") as video:
+with mvid.Video("myvideo.mp4") as video:
     # get the number of frames
     print(len(video))
 
     # random access
-    frame = video[57]
+    frame = video[57]  # frame is a NumPy array
+    
+    print(frame.shape)  # (H, W, 3)
     
     # iterate over all frames in the video
     for frame in video:
         pass
 ```
 It uses PyAV (with minimal to no overhead) and abstracts away seeking logic for you.
+
+We also give a simple `Recorder` to write from NumPy arrays
+```python
+import numpy as np
+import mvid
+
+with mvid.Recorder("output.mp4", fps=50) as rec:
+    
+    # record 1 second of gray
+    for _ in range(50):
+        rec(128 * np.ones(1080, 1920, 3))
+
+```
 
 # Installation
 ```bash

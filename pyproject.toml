@@ -1,6 +1,6 @@
 [project]
 name = "mvid"
-version = "0.1.1"
+version = "0.2.0"
 description = "Simple video reading"
 readme = "README.md"
 license-files = ["LICENSE"]
