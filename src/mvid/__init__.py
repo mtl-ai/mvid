@@ -1,4 +1,6 @@
-from typing import Generator, Sequence
+from argparse import ArgumentError
+from fractions import Fraction
+from typing import Any, Generator, Sequence
 
 import av
 import numpy as np
@@ -161,6 +163,10 @@ class AVVideo(Sequence[av.VideoFrame]):
 
         return self._read()
 
+    @property
+    def fps(self) -> Fraction:
+        return self._stream.base_rate
+
 
 class Video(Sequence[np.ndarray]):
     """
@@ -237,3 +243,138 @@ class Video(Sequence[np.ndarray]):
         return frame.to_ndarray(
             format=self._format, width=self._width, height=self._height
         )
+
+    @property
+    def fps(self):
+        return self._av_video.fps
+
+
+class AVRecorder:
+    """
+    This is the "raw" PyAV version of the Recorder class. It receives PyAV Frame objects.
+    """
+
+    def __init__(
+        self,
+        path,
+        fps: int | Fraction = 30,
+        width: int = None,
+        height: int = None,
+        stream_options: dict[str, Any] = None,
+        codec="libx264",
+        codec_options: dict[str, str] = None,
+    ):
+        container = av.open(path, mode="w")
+
+        if stream_options is None:
+            stream_options = dict()
+
+        # use 0 for width/height to signal that it must be set later
+        stream = container.add_stream(
+            codec,
+            options=codec_options,
+            rate=fps,
+            width=width if width is not None else 0,
+            height=height if height is not None else 0,
+            **stream_options,
+        )
+
+        self._container = container
+        self._stream = stream
+
+    def close(self):
+        # flush final packets
+        for packet in self._stream.encode():
+            self._container.mux(packet)
+
+        self._container.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def _maybe_set_size(self, width, height):
+        # for convenience, we support inferring the size from the first received frame
+        if self._stream.width == 0:
+            self._stream.width = width
+
+        if self._stream.height == 0:
+            self._stream.height = height
+
+    def __call__(self, frame: av.VideoFrame):
+        self._maybe_set_size(frame.width, frame.height)
+
+        for packet in self._stream.encode(frame):
+            self._container.mux(packet)
+
+
+class Recorder:
+    def __init__(
+        self,
+        path,
+        fps: int | Fraction = 30,
+        width: int = None,
+        height: int = None,
+        stream_options: dict[str, Any] = None,
+        codec: str = "libx264",
+        codec_options: dict[str, str] = None,
+        format: str = "rgb24",
+    ):
+        """
+        Video recorder class to save NumPy arrays to a video.
+
+        Example:
+            with Recorder("output.mp4") as rec:
+                image = 128 * np.ones((1080, 1920, 3), dtype=np.uint8)
+                rec(image)
+
+        :param path: Path for output video; the video format is inferred from the extension.
+        :param fps: Frame rate of the video, e.g. 50 for PAL or Fractional(24_000, 1_001) for 24.98 NTSC
+        :param width: Width of the output video in pixels, None to infer from first frame.
+        :param height: Height of the output video in pixels, None to infer from first frame.
+        :param stream_options: other general stream options (see attributes of av.VideoStream class), e.g. bit_rate, gop_size
+        :param codec: name of the encoder to use (e.g., "libx264", "libx265")
+        :param codec_options: private codec options such as {"crf": "18", "preset": "fast"}
+        :param format: Expected pixel format of the NumPy arrays that will be passed as frames (e.g., "rgb24",
+        "gray")
+
+        Note:
+            Incoming frames must match the expected pixel format. If the width or height of the video has not been set
+            in the initializer, the size of the first incoming frame will be used to set the size.
+            If incoming frames don't match the size of the video, PyAV will resize them internally using FFmpeg.
+        """
+
+        self._av_rec = AVRecorder(
+            path=path,
+            fps=fps,
+            width=width,
+            height=height,
+            stream_options=stream_options,
+            codec=codec,
+            codec_options=codec_options,
+        )
+        self._format = format
+
+    def close(self):
+        self._av_rec.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+    def write(self, frame: np.ndarray):
+        """
+        Write a frame to output.
+        """
+        av_frame = av.VideoFrame.from_ndarray(frame, format=self._format)
+        self._av_rec(av_frame)
+
+    def __call__(self, frame: np.ndarray):
+        """
+        Alias for self.write()
+        """
+        self.write(frame)
