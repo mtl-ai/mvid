@@ -1,10 +1,11 @@
-import av
-import numpy as np
+from fractions import Fraction
+from random import shuffle
 from tempfile import NamedTemporaryFile
 
-from mvid import Video
+import av
+import numpy as np
 
-from random import shuffle
+from mvid import Video
 
 
 def test_seek():
@@ -12,17 +13,20 @@ def test_seek():
     with NamedTemporaryFile(prefix="test", suffix=".mp4", delete_on_close=False) as f:
         file_name = f.name
 
+        width = 64
+        height = 48
+
         # generate test video with keyframes every 10 frames
         with av.open(file_name, "w") as c:
-            stream = c.add_stream("libx264", rate=50)
-            stream.width = 640
-            stream.height = 480
+            stream = c.add_stream("libx264", rate=Fraction(24_000, 1_001))
+            stream.width = width
+            stream.height = height
             # print(dir(stream.codec_context))
-            stream.codec_context.gop_size = 11
+            stream.gop_size = 11
 
             for i in range(50):
                 image = np.random.randint(
-                    0, 255, size=(stream.height, stream.width, 3), dtype=np.uint8
+                    0, 255, size=(height, width, 3), dtype=np.uint8
                 )
                 frame = av.VideoFrame.from_ndarray(image)
                 for packet in stream.encode(frame):
