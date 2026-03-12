@@ -15,10 +15,11 @@ def test_seek():
 
         width = 64
         height = 48
+        fps = Fraction(24_000, 1_001)
 
         # generate test video with keyframes every 10 frames
         with av.open(file_name, "w") as c:
-            stream = c.add_stream("libx264", rate=Fraction(24_000, 1_001))
+            stream = c.add_stream("libx264", rate=fps)
             stream.width = width
             stream.height = height
             # print(dir(stream.codec_context))
@@ -45,6 +46,7 @@ def test_seek():
 
         # compare sequential and random access
         with Video(file_name) as video:
+            assert video.fps == fps
             actual_frames = [f for f in video]
             assert len(actual_frames) == len(target_frames)
             for a, t in zip(actual_frames, target_frames):
